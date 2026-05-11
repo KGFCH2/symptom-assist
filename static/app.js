@@ -659,6 +659,95 @@
         addMessage("bot", "Let's start fresh. What symptoms are you experiencing?");
       }
 
+      function generateClinicalPdf(sessionData) {
+        const template = document.getElementById("clinical-report-template");
+        if (!template || !sessionData) return;
+
+        template.querySelector("#pdf-gen-date").textContent = new Date().toUTCString();
+        template.querySelector("#pdf-session-id").textContent = sessionId ? `${sessionId.substring(0, 8)}...` : "new-session";
+
+        const redFlags = sessionData.red_flags || sessionData.red_flags_detected || [];
+        const rfSection = template.querySelector("#pdf-red-flags");
+        const rfList = template.querySelector("#pdf-rf-list");
+        if (redFlags.length > 0) {
+          rfSection.style.display = "block";
+          rfList.innerHTML = redFlags
+            .map((rf) => `<div class="report-item"><span class="report-item-bullet">•</span> ${String(rf).toUpperCase()}</div>`)
+            .join("");
+        } else {
+          rfSection.style.display = "none";
+        }
+
+        const symptoms = Array.isArray(sessionData.symptoms) ? [...sessionData.symptoms] : [];
+        const sympList = template.querySelector("#pdf-symptom-list");
+        sympList.innerHTML = symptoms
+          .sort((a, b) => (a.onset_order || 999) - (b.onset_order || 999))
+          .map((s) => {
+            const name = String(s.name || s).replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+            const dur = s.duration ? ` | Duration: ${s.duration}` : "";
+            const sev = s.severity ? ` | Severity: ${s.severity}` : "";
+            return `<div class="report-item"><span class="report-item-bullet">•</span> ${name}${dur}${sev}</div>`;
+          })
+          .join("");
+
+        const condList = template.querySelector("#pdf-condition-list");
+        const topConditions = Array.isArray(sessionData.top_conditions) ? sessionData.top_conditions : [];
+        condList.innerHTML = topConditions
+          .map((c, i) => `
+            <div class="report-condition">
+              <div class="report-condition-header">
+                <span class="report-condition-name">${i + 1}. ${c.display}</span>
+                <span class="report-condition-meta" style="color: ${c.severity === 'high' ? '#dc2626' : (c.severity === 'medium' ? '#92400e' : '#166534')}">
+                  ${c.severity} severity
+                </span>
+              </div>
+              <div class="report-condition-desc">${c.description || ''}</div>
+            </div>
+          `)
+          .join("");
+
+        const sourceList = template.querySelector("#pdf-source-list");
+        const ragSources = Array.isArray(sessionData.rag_sources) ? sessionData.rag_sources : [];
+        if (ragSources.length > 0) {
+          sourceList.innerHTML = ragSources
+            .map((src) => `<div class="report-item"><span class="report-item-bullet">•</span> ${src}</div>`)
+            .join("");
+        } else {
+          sourceList.innerHTML = '<p>No specific educational documents retrieved for this session.</p>';
+        }
+
+        const safeSessionId = (sessionId || "new-session").substring(0, 5);
+        const outputFilename = `SymptomAssist_Clinical_Summary_${safeSessionId}.pdf`;
+
+        const originalText = downloadPdfBtn.textContent;
+        downloadPdfBtn.textContent = "Generating...";
+        downloadPdfBtn.disabled = true;
+
+        const opt = {
+          margin: 10,
+          filename: outputFilename,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            letterRendering: true,
+            scrollY: 0,
+            logging: false,
+          },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["avoid-all", "css", "legacy"] },
+        };
+
+        html2pdf()
+          .set(opt)
+          .from(template)
+          .save()
+          .finally(() => {
+            downloadPdfBtn.textContent = originalText;
+            downloadPdfBtn.disabled = false;
+          });
+      }
+
       function updateDashboard(data) {
         // Symptoms
         const sympList = document.getElementById("symp-list");
@@ -935,6 +1024,12 @@
           closeModal(confirmModal);
         });
 
+        confirmModal.addEventListener("click", (e) => {
+          if (e.target === confirmModal) {
+            closeModal(confirmModal);
+          }
+        });
+
         // ============================================================
         // SUMMARY MODAL
         // ============================================================
@@ -942,8 +1037,10 @@
         const viewSummaryBtn = document.getElementById("viewSummaryBtn");
         const closeSummaryBtn = document.getElementById("closeSummaryBtn");
         const copySummaryBtn = document.getElementById("copySummaryBtn");
+        const downloadPdfBtn = document.getElementById("downloadPdfBtn");
         const printSummaryBtn = document.getElementById("printSummaryBtn");
         const summaryTextArea = document.getElementById("summary-text-area");
+        let lastSummaryData = null;
 
         viewSummaryBtn.addEventListener("click", async () => {
           if (!sessionId || allSymptoms.length === 0) {
@@ -953,12 +1050,14 @@
           
           openModal(summaryModal, viewSummaryBtn);
           summaryTextArea.textContent = "Assembling clinical summary...";
+          lastSummaryData = null;
           
           try {
             const res = await fetch(`/summary/${sessionId}`);
             if (!res.ok) throw new Error("Failed to fetch summary");
             const data = await res.json();
             summaryTextArea.textContent = data.text;
+            lastSummaryData = data.data || null;
           } catch (err) {
             summaryTextArea.textContent = "Error loading summary. Please try again later.";
             console.error(err);
@@ -967,6 +1066,12 @@
 
         closeSummaryBtn.addEventListener("click", () => {
           closeModal(summaryModal);
+        });
+
+        summaryModal.addEventListener("click", (e) => {
+          if (e.target === summaryModal) {
+            closeModal(summaryModal);
+          }
         });
 
         copySummaryBtn.addEventListener("click", () => {
@@ -982,6 +1087,14 @@
 
         printSummaryBtn.addEventListener("click", () => {
           window.print();
+        });
+
+        downloadPdfBtn.addEventListener("click", () => {
+          if (!sessionId || !lastSummaryData) {
+            alert("Summary data not available. Please wait for the summary to load.");
+            return;
+          }
+          generateClinicalPdf(lastSummaryData);
         });
 
         // ============================================================

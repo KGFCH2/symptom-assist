@@ -1096,6 +1096,13 @@ dialog::focus-visible {
   justify-content: flex-end;
 }
 
+.summary-title {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .btn-secondary {
   padding: 8px 16px;
   border-radius: 8px;
