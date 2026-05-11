@@ -815,37 +815,129 @@
           "Welcome to SymptomAssist AI. Describe your symptoms in detail — the medical knowledge graph (built from 41 conditions and 130+ symptoms from a real dataset) will be traversed using BFS to identify likely conditions.\n\nHow are you feeling today?",
         );
 
-        // ✅ MODAL FIX STARTS HERE
-        const modal = document.getElementById("confirmModal");
+        // ============================================================
+        // MODAL ACCESSIBILITY UTILITIES
+        // ============================================================
+        
+        /**
+         * Focus trap: Keep Tab focus within the dialog element
+         */
+        function createFocusTrap(dialogEl) {
+          const focusableSelectors = [
+            'button',
+            '[href]',
+            'input',
+            'select',
+            'textarea',
+            '[tabindex]:not([tabindex="-1"])'
+          ].join(',');
+          
+          return function handleKeyDown(e) {
+            if (e.key !== 'Tab') return;
+            
+            const focusables = Array.from(dialogEl.querySelectorAll(focusableSelectors));
+            if (focusables.length === 0) return;
+            
+            const firstEl = focusables[0];
+            const lastEl = focusables[focusables.length - 1];
+            const activeEl = document.activeElement;
+            
+            if (e.shiftKey) {
+              // Shift+Tab: Move backwards
+              if (activeEl === firstEl) {
+                e.preventDefault();
+                lastEl.focus();
+              }
+            } else {
+              // Tab: Move forwards
+              if (activeEl === lastEl) {
+                e.preventDefault();
+                firstEl.focus();
+              }
+            }
+          };
+        }
+
+        /**
+         * Open modal with accessibility features
+         */
+        function openModal(dialogEl, triggerEl) {
+          const focusTrapHandler = createFocusTrap(dialogEl);
+          
+          // Store reference to trigger element for focus restoration
+          dialogEl._triggerElement = triggerEl;
+          
+          // Show modal
+          dialogEl.showModal();
+          
+          // Set up Escape key handler
+          const escapeHandler = (e) => {
+            if (e.key === 'Escape') {
+              closeModal(dialogEl);
+            }
+          };
+          dialogEl._escapeHandler = escapeHandler;
+          dialogEl.addEventListener('keydown', escapeHandler);
+          
+          // Set up focus trap
+          dialogEl.addEventListener('keydown', focusTrapHandler);
+          dialogEl._focusTrapHandler = focusTrapHandler;
+          
+          // Focus first interactive element in modal
+          const firstButton = dialogEl.querySelector('button');
+          if (firstButton) {
+            setTimeout(() => firstButton.focus(), 50);
+          }
+        }
+
+        /**
+         * Close modal with focus restoration
+         */
+        function closeModal(dialogEl) {
+          // Clean up event listeners
+          if (dialogEl._escapeHandler) {
+            dialogEl.removeEventListener('keydown', dialogEl._escapeHandler);
+          }
+          if (dialogEl._focusTrapHandler) {
+            dialogEl.removeEventListener('keydown', dialogEl._focusTrapHandler);
+          }
+          
+          // Close dialog
+          dialogEl.close();
+          
+          // Restore focus to trigger element
+          if (dialogEl._triggerElement) {
+            setTimeout(() => dialogEl._triggerElement.focus(), 50);
+          }
+        }
+
+        // ============================================================
+        // CONFIRM MODAL - New Chat
+        // ============================================================
+        const confirmModal = document.getElementById("confirmModal");
         const confirmBtn = document.getElementById("confirmBtn");
         const cancelBtn = document.getElementById("cancelBtn");
         const newChatBtn = document.getElementById("newChatBtn");
 
         // OPEN modal
         newChatBtn.addEventListener("click", () => {
-          modal.classList.add("show");
+          openModal(confirmModal, newChatBtn);
         });
 
-        // CONFIRM
+        // CONFIRM - Clear chat and close
         confirmBtn.addEventListener("click", () => {
           clearChat();
-          modal.classList.remove("show");
+          closeModal(confirmModal);
         });
 
-        // CANCEL
+        // CANCEL - Close without action
         cancelBtn.addEventListener("click", () => {
-          modal.classList.remove("show");
+          closeModal(confirmModal);
         });
 
-        // CLICK OUTSIDE
-        modal.addEventListener("click", (e) => {
-          if (e.target === modal) {
-            modal.classList.remove("show");
-          }
-        });
-        // ✅ MODAL FIX ENDS HERE
-        
-        // --- Summary Modal Logic ---
+        // ============================================================
+        // SUMMARY MODAL
+        // ============================================================
         const summaryModal = document.getElementById("summaryModal");
         const viewSummaryBtn = document.getElementById("viewSummaryBtn");
         const closeSummaryBtn = document.getElementById("closeSummaryBtn");
@@ -859,7 +951,7 @@
             return;
           }
           
-          summaryModal.classList.add("show");
+          openModal(summaryModal, viewSummaryBtn);
           summaryTextArea.textContent = "Assembling clinical summary...";
           
           try {
@@ -874,7 +966,7 @@
         });
 
         closeSummaryBtn.addEventListener("click", () => {
-          summaryModal.classList.remove("show");
+          closeModal(summaryModal);
         });
 
         copySummaryBtn.addEventListener("click", () => {
@@ -892,13 +984,9 @@
           window.print();
         });
 
-        summaryModal.addEventListener("click", (e) => {
-          if (e.target === summaryModal) {
-            summaryModal.classList.remove("show");
-          }
-        });
-
-        // Theme toggle
+        // ============================================================
+        // THEME TOGGLE
+        // ============================================================
         const toggleBtn = document.getElementById("theme-toggle");
 
         if (localStorage.getItem("theme") === "dark") {
